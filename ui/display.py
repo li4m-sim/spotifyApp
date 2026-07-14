@@ -10,13 +10,16 @@ from bandsintown.models import Concert
 console = Console()
 
 
-def print_welcome(username: str, display_name: str) -> None:
+def print_welcome(username: str, display_name: str, dev_mode: bool = False) -> None:
     """Print a welcome banner."""
     text = Text()
-    text.append("Spotify Concert Finder\n", style="bold green")
-    text.append(f"Logged in as: ", style="dim")
+    text.append("Spotify Concert Finder", style="bold green")
+    if dev_mode:
+        text.append("  [DEV MODE]", style="bold yellow")
+    text.append("\n")
+    text.append("Logged in as: ", style="dim")
     text.append(display_name or username, style="bold cyan")
-    console.print(Panel(text, border_style="green", padding=(1, 4)))
+    console.print(Panel(text, border_style="green" if not dev_mode else "yellow", padding=(1, 4)))
 
 
 def print_artists_table(artists: List[Artist], title: str) -> None:
@@ -110,6 +113,43 @@ def print_no_credentials_warning() -> None:
         border_style="red",
         padding=(1, 2),
     ))
+
+
+def print_api_error(artist_name: str, status_code: int, detail: str, app_id: str) -> None:
+    """Show a visible API error panel in developer mode."""
+    is_default = app_id in ("spotifyconcertfinder",)
+    tip = ""
+    if status_code == 403:
+        if is_default:
+            tip = (
+                "\n[yellow]Tip:[/yellow] Your BANDSINTOWN_APP_ID is still the default value.\n"
+                "Make sure your [bold].env[/bold] file exists in the project folder and contains:\n"
+                "  [cyan]BANDSINTOWN_APP_ID=your_account_id[/cyan]\n"
+                "and that you run the app from inside the [bold]spotifyApp/[/bold] directory."
+            )
+        else:
+            tip = "\n[yellow]Tip:[/yellow] Check that your Bandsintown account ID is correct."
+
+    console.print(Panel(
+        f"[bold red]API ERROR — {artist_name}[/bold red]\n"
+        f"Status : [red]{status_code}[/red]\n"
+        f"Detail : {detail}\n"
+        f"app_id : [dim]{app_id}[/dim]"
+        + tip,
+        title="[bold red]Bandsintown API Error[/bold red]",
+        border_style="red",
+        padding=(1, 2),
+    ))
+
+
+def print_debug_info(artist_name: str, total_events: int, filtered_events: int, country_names: List[str]) -> None:
+    """Show debug info about how many events were fetched and filtered."""
+    countries_str = ", ".join(country_names) if country_names else "none"
+    console.print(
+        f"  [dim][DEBUG] [cyan]{artist_name}[/cyan] — "
+        f"{total_events} event(s) from Bandsintown → "
+        f"{filtered_events} matching ({countries_str})[/dim]"
+    )
 
 
 def print_error(message: str) -> None:

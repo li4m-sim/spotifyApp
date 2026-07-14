@@ -4,6 +4,7 @@ from typing import List
 import spotipy
 from rich.console import Console
 
+import config
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 from auth.spotify_auth import create_spotify_client, get_current_user
 from spotify.client import get_top_artists, get_followed_artists, TIME_RANGE_LABELS
@@ -110,6 +111,7 @@ def find_concerts(
             artist_name=artist.name,
             country_codes=country_codes,
             city=city,
+            debug=config.DEBUG_MODE,
         )
         all_concerts.extend(concerts)
 
@@ -170,16 +172,25 @@ def main() -> None:
         display.print_error(f"Spotify authentication failed: {e}")
         sys.exit(1)
 
-    # 3. Welcome banner
+    # 3. Ask run mode (before welcome banner so banner reflects choice)
+    config.DEBUG_MODE = menus.ask_run_mode()
+
+    # 4. Welcome banner
     display.print_welcome(
         username=user.get("id", ""),
         display_name=user.get("display_name", ""),
+        dev_mode=config.DEBUG_MODE,
     )
 
-    # 4. Artist management (initial)
+    if config.DEBUG_MODE:
+        from config import BANDSINTOWN_APP_ID
+        display.print_info(f"[DEV] BANDSINTOWN_APP_ID = \"{BANDSINTOWN_APP_ID}\"")
+        display.print_info(f"[DEV] Spotify user ID    = \"{user.get('id', '')}\"")
+
+    # 5. Artist management (initial)
     combined = manage_artists(sp)
 
-    # 5. Main loop
+    # 6. Main loop
     while True:
         action = menus.ask_main_menu()
 

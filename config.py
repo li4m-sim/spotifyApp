@@ -21,3 +21,7 @@ BANDSINTOWN_APP_ID = os.getenv("BANDSINTOWN_APP_ID", "spotifyconcertfinder")
 # App defaults
 DEFAULT_TOP_ARTISTS_LIMIT = 20
 DEFAULT_FOLLOWED_ARTISTS_LIMIT = 50
+
+# Runtime flag — set to True at startup when user selects Developer mode.
+# Modules should import this and check it at call time, not at import time.
+DEBUG_MODE: bool = False

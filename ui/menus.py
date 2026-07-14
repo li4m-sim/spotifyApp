@@ -478,6 +478,29 @@ def ask_radius_search() -> Tuple[Optional[str], Optional[int]]:
 
 
 # ---------------------------------------------------------------------------
+# Run mode
+# ---------------------------------------------------------------------------
+
+def ask_run_mode() -> bool:
+    """
+    Ask the user whether to run in normal or developer mode.
+    Returns True if developer mode was selected, False otherwise.
+    """
+    choice = questionary.select(
+        "Select run mode:",
+        choices=[
+            questionary.Choice("Normal mode", value="normal"),
+            questionary.Choice(
+                "Developer mode  (shows API errors and debug info)",
+                value="developer",
+            ),
+        ],
+        style=STYLE,
+    ).ask()
+    return choice == "developer"
+
+
+# ---------------------------------------------------------------------------
 # Main menu
 # ---------------------------------------------------------------------------
 

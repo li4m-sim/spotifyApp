@@ -656,3 +656,26 @@ def ask_main_menu() -> str:
 def ask_continue() -> bool:
     """Ask if the user wants to continue."""
     return questionary.confirm("Continue?", default=True, style=STYLE).ask()
+
+
+def ask_export_excel(default_path: str) -> Optional[str]:
+    """
+    Ask if the user wants to export the concerts table to Excel.
+    Returns the file path to save to, or None if skipped.
+    """
+    export = questionary.confirm(
+        "Export results to Excel?",
+        default=False,
+        style=STYLE,
+    ).ask()
+
+    if not export:
+        return None
+
+    path = questionary.text(
+        "Save as (full path or filename):",
+        default=default_path,
+        style=STYLE,
+    ).ask()
+
+    return path if path and path.strip() else None

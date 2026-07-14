@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 import spotipy
@@ -179,7 +179,7 @@ def run_concert_search(artists: List[Artist]) -> None:
 
     # Offer Excel export only if there are results
     if concerts:
-        default_filename = f"concerts_{date.today().isoformat()}.xlsx"
+        default_filename = f"concerts_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
         default_path = os.path.join(
             os.path.expanduser("~"), "concerts", default_filename
         )

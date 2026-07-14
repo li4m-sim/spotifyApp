@@ -6,6 +6,7 @@ import spotipy
 from rich.console import Console
 
 import config
+import updater
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 from auth.spotify_auth import create_spotify_client, get_current_user, logout
 from spotify.client import get_top_artists, get_followed_artists, TIME_RANGE_LABELS
@@ -174,6 +175,9 @@ def run_concert_search(artists: List[Artist]) -> None:
 
 
 def main() -> None:
+    # Check for updates before anything else — silently skips if not due or on any error
+    updater.check_and_update()
+
     console.clear()
 
     # 1. Check credentials

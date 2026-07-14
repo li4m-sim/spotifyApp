@@ -631,6 +631,7 @@ def ask_main_menu() -> str:
             questionary.Choice("Search concerts for current artists", value="search"),
             questionary.Choice("Change artist selection", value="change_artists"),
             questionary.Choice("View my artists", value="artists"),
+            questionary.Choice("Logout & switch account", value="logout"),
             questionary.Choice("Exit", value="exit"),
         ],
         style=STYLE,

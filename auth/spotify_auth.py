@@ -1,3 +1,4 @@
+import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from config import (
@@ -32,3 +33,14 @@ def create_spotify_client() -> spotipy.Spotify:
 def get_current_user(sp: spotipy.Spotify) -> dict:
     """Return the current user's profile."""
     return sp.current_user()
+
+
+def logout() -> bool:
+    """
+    Delete the cached Spotify token, forcing a fresh browser login on next auth.
+    Returns True if a cache file was found and deleted, False if there was nothing to delete.
+    """
+    if os.path.exists(SPOTIFY_CACHE_PATH):
+        os.remove(SPOTIFY_CACHE_PATH)
+        return True
+    return False

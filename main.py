@@ -7,7 +7,7 @@ from rich.console import Console
 
 import config
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
-from auth.spotify_auth import create_spotify_client, get_current_user
+from auth.spotify_auth import create_spotify_client, get_current_user, logout
 from spotify.client import get_top_artists, get_followed_artists, TIME_RANGE_LABELS
 from spotify.models import Artist
 from bandsintown.client import search_concerts
@@ -219,6 +219,23 @@ def main() -> None:
             run_concert_search(combined)
 
         elif action == "change_artists":
+            combined = manage_artists(sp)
+
+        elif action == "logout":
+            display.print_info("Logging out...")
+            logout()
+            display.print_info("Token cleared. Opening browser for fresh login...")
+            try:
+                sp = create_spotify_client()
+                user = get_current_user(sp)
+            except Exception as e:
+                display.print_error(f"Spotify authentication failed: {e}")
+                sys.exit(1)
+            display.print_welcome(
+                username=user.get("id", ""),
+                display_name=user.get("display_name", ""),
+                dev_mode=config.DEBUG_MODE,
+            )
             combined = manage_artists(sp)
 
         elif action == "artists":

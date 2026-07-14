@@ -1,4 +1,6 @@
-from typing import List
+from typing import List, Optional
+import os
+from datetime import date
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -182,3 +184,69 @@ def _source_tag(source: str) -> str:
         "searched": "[bold yellow]searched[/bold yellow]",
     }
     return tags.get(source, source)
+
+
+def export_concerts_to_excel(concerts: List[Concert], path: str) -> bool:
+    """
+    Export the concerts list to an Excel file at the given path.
+    Returns True on success, False on failure.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Concerts"
+
+        # Header style
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill("solid", fgColor="1DB954")  # Spotify green
+        header_alignment = Alignment(horizontal="center", vertical="center")
+
+        headers = ["Artist", "Event", "Date", "Time", "Venue", "City", "Country", "Ticket URL"]
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+
+        # Data rows
+        for row_num, concert in enumerate(concerts, 2):
+            ws.cell(row=row_num, column=1, value=concert.artist)
+            ws.cell(row=row_num, column=2, value=concert.event_name)
+            ws.cell(row=row_num, column=3, value=concert.date)
+            ws.cell(row=row_num, column=4, value=concert.time or "")
+            ws.cell(row=row_num, column=5, value=concert.venue)
+            ws.cell(row=row_num, column=6, value=concert.city)
+            ws.cell(row=row_num, column=7, value=concert.country)
+
+            # Ticket URL as hyperlink
+            ticket_cell = ws.cell(row=row_num, column=8)
+            if concert.ticket_url:
+                ticket_cell.value = "Buy Tickets"
+                ticket_cell.hyperlink = concert.ticket_url
+                ticket_cell.font = Font(color="1DB954", underline="single")
+            else:
+                ticket_cell.value = ""
+
+        # Auto-fit column widths
+        for col_num, column_cells in enumerate(ws.columns, 1):
+            max_length = max(
+                (len(str(cell.value)) for cell in column_cells if cell.value),
+                default=10,
+            )
+            ws.column_dimensions[get_column_letter(col_num)].width = min(max_length + 4, 60)
+
+        # Freeze header row
+        ws.freeze_panes = "A2"
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        wb.save(path)
+        return True
+
+    except Exception as e:
+        console.print(f"[bold red]Export failed:[/bold red] {e}")
+        return False

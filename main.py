@@ -1,3 +1,4 @@
+import os
 import sys
 from datetime import date
 from typing import List, Optional
@@ -175,6 +176,18 @@ def run_concert_search(artists: List[Artist]) -> None:
     title = "Upcoming Concerts — " + " | ".join(title_parts)
 
     display.print_concerts_table(concerts, title)
+
+    # Offer Excel export only if there are results
+    if concerts:
+        default_filename = f"concerts_{date.today().isoformat()}.xlsx"
+        default_path = os.path.join(
+            os.path.expanduser("~"), "concerts", default_filename
+        )
+        export_path = menus.ask_export_excel(default_path)
+        if export_path:
+            success = display.export_concerts_to_excel(concerts, export_path)
+            if success:
+                console.print(f"[bold green]Saved to:[/bold green] {export_path}")
 
 
 def main() -> None:

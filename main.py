@@ -1,5 +1,6 @@
 import sys
-from typing import List
+from datetime import date
+from typing import List, Optional
 
 import spotipy
 from rich.console import Console
@@ -100,8 +101,10 @@ def manage_artists(sp: spotipy.Spotify) -> List[Artist]:
 def find_concerts(
     artists: List[Artist],
     country_codes: List[str],
-    city: str,
-    radius_km: int,
+    city: Optional[str],
+    radius_km: Optional[int],
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
 ) -> List[Concert]:
     """Search Bandsintown for concerts for all artists."""
     all_concerts = []
@@ -111,6 +114,8 @@ def find_concerts(
             artist_name=artist.name,
             country_codes=country_codes,
             city=city,
+            date_from=date_from,
+            date_to=date_to,
             debug=config.DEBUG_MODE,
         )
         all_concerts.extend(concerts)
@@ -138,19 +143,31 @@ def run_concert_search(artists: List[Artist]) -> None:
         return
 
     country_codes = menus.ask_countries()
-    if not country_codes:
-        display.print_info("No countries selected. Skipping concert search.")
-        return
 
     city, radius_km = menus.ask_radius_search()
 
-    display.print_section("Searching for Concerts")
-    concerts = find_concerts(artists, country_codes, city, radius_km)
+    date_from, date_to = menus.ask_date_range()
 
-    country_names = [menus.COUNTRIES.get(c, c) for c in country_codes]
-    title_parts = [", ".join(country_names)]
+    display.print_section("Searching for Concerts")
+    concerts = find_concerts(artists, country_codes, city, radius_km, date_from, date_to)
+
+    # Build title
+    if country_codes:
+        country_names = [menus.COUNTRIES.get(c, c) for c in country_codes]
+        location_str = ", ".join(country_names)
+    else:
+        location_str = "All locations"
+
+    title_parts = [location_str]
     if city and radius_km:
         title_parts.append(f"within {radius_km}km of {city}")
+    if date_from and date_to:
+        title_parts.append(f"{date_from.strftime('%b %Y')} – {date_to.strftime('%b %Y')}")
+    elif date_from:
+        title_parts.append(f"from {date_from.strftime('%b %Y')}")
+    elif date_to:
+        title_parts.append(f"until {date_to.strftime('%b %Y')}")
+
     title = "Upcoming Concerts — " + " | ".join(title_parts)
 
     display.print_concerts_table(concerts, title)

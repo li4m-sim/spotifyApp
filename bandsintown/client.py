@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import date
 import requests
 from bandsintown.models import Concert
 from config import BANDSINTOWN_APP_ID
@@ -10,23 +11,25 @@ BASE_URL = "https://rest.bandsintown.com"
 def get_artist_events(
     artist_name: str,
     country_codes: Optional[List[str]] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     debug: bool = False,
 ) -> List[Concert]:
     """
     Fetch upcoming events for an artist from the Bandsintown API.
 
-    Bandsintown does not support server-side country filtering, so we fetch
-    all upcoming events and filter locally by country code.
+    Filters locally by country code and date range.
 
     Args:
         artist_name: Name of the artist
-        country_codes: Optional list of ISO 3166-1 alpha-2 country codes to filter by
+        country_codes: ISO country codes to filter by. Pass [] or None for all locations.
+        date_from: Optional start date filter (inclusive)
+        date_to: Optional end date filter (inclusive)
         debug: If True, print API errors and filter stats to the terminal
 
     Returns:
         List of Concert objects
     """
-    # Import here to avoid circular import at module load time
     from ui import display
 
     try:
@@ -48,7 +51,6 @@ def get_artist_events(
 
         data = resp.json()
 
-        # Bandsintown returns an error dict or a string "Not Found" on failure
         if not isinstance(data, list):
             if debug:
                 display.print_api_error(
@@ -61,7 +63,7 @@ def get_artist_events(
 
         all_concerts = [Concert.from_bandsintown(event, artist_name) for event in data]
 
-        # Filter by country codes if provided
+        # Country filter — skip if empty (all locations)
         if country_codes:
             allowed_names = {
                 _country_code_to_name(code).lower()
@@ -74,8 +76,18 @@ def get_artist_events(
         else:
             filtered = all_concerts
 
+        # Date range filter
+        if date_from:
+            filtered = [c for c in filtered if c.date >= str(date_from)]
+        if date_to:
+            filtered = [c for c in filtered if c.date <= str(date_to)]
+
         if debug:
-            country_names = [_country_code_to_name(c) for c in (country_codes or [])]
+            country_names = (
+                [_country_code_to_name(c) for c in country_codes]
+                if country_codes
+                else ["all locations"]
+            )
             display.print_debug_info(
                 artist_name=artist_name,
                 total_events=len(all_concerts),
@@ -87,7 +99,6 @@ def get_artist_events(
 
     except requests.exceptions.ConnectionError:
         if debug:
-            from ui import display
             display.print_api_error(
                 artist_name=artist_name,
                 status_code=0,
@@ -97,7 +108,6 @@ def get_artist_events(
         return []
     except requests.exceptions.Timeout:
         if debug:
-            from ui import display
             display.print_api_error(
                 artist_name=artist_name,
                 status_code=0,
@@ -107,7 +117,6 @@ def get_artist_events(
         return []
     except requests.exceptions.RequestException as e:
         if debug:
-            from ui import display
             display.print_api_error(
                 artist_name=artist_name,
                 status_code=0,
@@ -121,23 +130,31 @@ def search_concerts(
     artist_name: str,
     country_codes: List[str],
     city: Optional[str] = None,
-    radius_km: Optional[int] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     debug: bool = False,
 ) -> List[Concert]:
     """
-    Search for concerts for an artist, filtered by countries and optionally city.
+    Search for concerts for an artist, filtered by countries, date range, and optionally city.
 
     Args:
         artist_name: Artist name to search
-        country_codes: ISO country codes to include
+        country_codes: ISO country codes to include. Empty list = all locations.
         city: Optional city name to filter by (substring match)
-        radius_km: Reserved for future use
+        date_from: Optional start date filter (inclusive)
+        date_to: Optional end date filter (inclusive)
         debug: If True, surface API errors and filter stats
 
     Returns:
         Filtered, sorted list of Concert objects
     """
-    concerts = get_artist_events(artist_name, country_codes=country_codes, debug=debug)
+    concerts = get_artist_events(
+        artist_name,
+        country_codes=country_codes,
+        date_from=date_from,
+        date_to=date_to,
+        debug=debug,
+    )
 
     # Optional city filter (case-insensitive substring match)
     if city:

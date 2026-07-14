@@ -1,4 +1,6 @@
 from typing import List, Optional, Tuple, TYPE_CHECKING
+from datetime import date, timedelta
+import calendar
 import questionary
 from questionary import Style
 from spotify.client import TIME_RANGE_LABELS
@@ -361,10 +363,14 @@ def ask_remove_artists(artists: List["Artist"]) -> List["Artist"]:
 def ask_countries() -> List[str]:
     """
     2-step country selection:
-    Step 1 — choose a continent, all countries, or pick specific ones.
+    Step 1 — choose all locations, a continent, all countries, or specific ones.
     Step 2 — if picking specific: autocomplete search loop.
+    Returns [] for "all locations" (no country filter).
     """
     continent_choices = [
+        questionary.Choice("All locations (no country filter)", value="all_locations"),
+    ]
+    continent_choices += [
         questionary.Choice(f"All of {continent}", value=f"continent:{continent}")
         for continent in CONTINENTS.keys()
     ]
@@ -378,6 +384,9 @@ def ask_countries() -> List[str]:
     ).ask()
 
     if scope is None:
+        return []
+
+    if scope == "all_locations":
         return []
 
     if scope == "all":
@@ -440,6 +449,88 @@ def _ask_specific_countries() -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# Date range filter
+# ---------------------------------------------------------------------------
+
+def ask_date_range() -> Tuple[Optional[date], Optional[date]]:
+    """
+    Ask how far ahead to search for concerts.
+    Returns (date_from, date_to) — either or both may be None (no limit).
+    """
+    today = date.today()
+
+    preset = questionary.select(
+        "How far ahead should we search for concerts?",
+        choices=[
+            questionary.Choice("No limit (all upcoming events)", value="none"),
+            questionary.Choice("Next 1 month", value=1),
+            questionary.Choice("Next 3 months", value=3),
+            questionary.Choice("Next 6 months", value=6),
+            questionary.Choice("Next 12 months", value=12),
+            questionary.Choice("Custom range", value="custom"),
+        ],
+        style=STYLE,
+    ).ask()
+
+    if preset is None or preset == "none":
+        return None, None
+
+    if preset == "custom":
+        return _ask_custom_date_range(today)
+
+    # Preset month offsets
+    date_from = today
+    date_to = _add_months(today, preset)
+    return date_from, date_to
+
+
+def _ask_custom_date_range(today: date) -> Tuple[Optional[date], Optional[date]]:
+    """Let the user pick a from/to month+year using select menus."""
+    months = [
+        questionary.Choice(calendar.month_name[m], value=m)
+        for m in range(1, 13)
+    ]
+
+    # Offer years: current year + next 2
+    years = [
+        questionary.Choice(str(y), value=y)
+        for y in range(today.year, today.year + 3)
+    ]
+
+    # From
+    from_month = questionary.select("From month:", choices=months, style=STYLE).ask()
+    from_year = questionary.select("From year:", choices=years, style=STYLE).ask()
+
+    if from_month is None or from_year is None:
+        return None, None
+
+    date_from = date(from_year, from_month, 1)
+
+    # To
+    to_month = questionary.select("To month:", choices=months, style=STYLE).ask()
+    to_year = questionary.select("To year:", choices=years, style=STYLE).ask()
+
+    if to_month is None or to_year is None:
+        return date_from, None
+
+    # Last day of the selected to-month
+    last_day = calendar.monthrange(to_year, to_month)[1]
+    date_to = date(to_year, to_month, last_day)
+
+    return date_from, date_to
+
+
+def _add_months(d: date, months: int) -> date:
+    """Add a number of months to a date, clamping to the last day of the month."""
+    month = d.month - 1 + months
+    year = d.year + month // 12
+    month = month % 12 + 1
+    last_day = calendar.monthrange(year, month)[1]
+    day = min(d.day, last_day)
+    return date(year, month, day)
+
+
+# ---------------------------------------------------------------------------
 # Radius / city search
 # ---------------------------------------------------------------------------
 
@@ -484,8 +575,11 @@ def ask_radius_search() -> Tuple[Optional[str], Optional[int]]:
 def ask_run_mode() -> bool:
     """
     Ask the user whether to run in normal or developer mode.
-    Returns True if developer mode was selected, False otherwise.
+    If developer mode is selected, prompt for the DEV_PASSWORD from .env.
+    Returns True if developer mode was granted, False otherwise.
     """
+    from config import DEV_PASSWORD
+
     choice = questionary.select(
         "Select run mode:",
         choices=[
@@ -497,7 +591,32 @@ def ask_run_mode() -> bool:
         ],
         style=STYLE,
     ).ask()
-    return choice == "developer"
+
+    if choice != "developer":
+        return False
+
+    # If no password is configured, deny access
+    if not DEV_PASSWORD:
+        print("  Developer mode is not configured (DEV_PASSWORD not set in .env).")
+        return False
+
+    # Prompt up to 3 times
+    for attempt in range(1, 4):
+        password = questionary.password(
+            f"Enter developer password (attempt {attempt}/3):",
+            style=STYLE,
+        ).ask()
+
+        if password is None:
+            return False
+
+        if password == DEV_PASSWORD:
+            return True
+
+        print(f"  Incorrect password.")
+
+    print("  Too many failed attempts. Switching to normal mode.")
+    return False
 
 
 # ---------------------------------------------------------------------------

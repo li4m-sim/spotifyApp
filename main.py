@@ -1,6 +1,7 @@
 import sys
 from typing import List
 
+import spotipy
 from rich.console import Console
 
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
@@ -23,20 +24,76 @@ def check_credentials() -> bool:
     return True
 
 
-def fetch_artists(sp, source: str, time_range: str) -> List[Artist]:
-    """Fetch artists based on the selected source."""
-    top_artists = []
-    followed_artists = []
+def manage_artists(sp: spotipy.Spotify) -> List[Artist]:
+    """
+    Full artist management flow:
+    1. Multi-select sources (top / followed / search)
+    2. Configure each source
+    3. Review & edit the combined list (remove, add, restart)
+    Returns the final confirmed list of artists.
+    """
+    while True:
+        # Step 1 — choose sources
+        sources = menus.ask_artist_sources()
+        if not sources:
+            display.print_info("No sources selected.")
+            continue
 
-    if source in ("top", "both"):
-        display.print_info(f"Fetching your top artists ({TIME_RANGE_LABELS[time_range]})...")
-        top_artists = get_top_artists(sp, time_range=time_range)
+        combined: List[Artist] = []
 
-    if source in ("followed", "both"):
-        display.print_info("Fetching your followed artists...")
-        followed_artists = get_followed_artists(sp)
+        # Step 2 — fetch / collect each source
+        if "top" in sources:
+            time_range = menus.ask_time_range()
+            if time_range is None:
+                continue
+            display.print_info(f"Fetching your top artists ({TIME_RANGE_LABELS[time_range]})...")
+            combined.extend(get_top_artists(sp, time_range=time_range))
 
-    return top_artists, followed_artists
+        if "followed" in sources:
+            display.print_info("Fetching your followed artists...")
+            combined.extend(get_followed_artists(sp))
+
+        if "searched" in sources:
+            searched = menus.ask_specific_artists(sp)
+            combined.extend(searched)
+
+        # Deduplicate by Spotify ID (keep first occurrence, preserve source)
+        seen_ids = set()
+        unique: List[Artist] = []
+        for artist in combined:
+            if artist.id not in seen_ids:
+                seen_ids.add(artist.id)
+                unique.append(artist)
+        combined = unique
+
+        if not combined:
+            display.print_info("No artists found. Please try again.")
+            continue
+
+        # Step 3 — review / edit loop
+        while True:
+            display.print_section("Your Artist List")
+            display.print_artists_table(combined, title=f"Artists ({len(combined)})")
+
+            action = menus.ask_review_artists(combined)
+
+            if action is None or action == "continue":
+                return combined
+
+            elif action == "remove":
+                combined = menus.ask_remove_artists(combined)
+                if not combined:
+                    display.print_info("All artists removed. Starting over.")
+                    break  # back to source selection
+
+            elif action == "add":
+                added = menus.ask_specific_artists(sp)
+                for artist in added:
+                    if artist.id not in {a.id for a in combined}:
+                        combined.append(artist)
+
+            elif action == "restart":
+                break  # back to source selection
 
 
 def find_concerts(
@@ -78,20 +135,16 @@ def run_concert_search(artists: List[Artist]) -> None:
         display.print_info("No artists to search for.")
         return
 
-    # Ask for countries
     country_codes = menus.ask_countries()
     if not country_codes:
         display.print_info("No countries selected. Skipping concert search.")
         return
 
-    # Ask for optional city+radius
     city, radius_km = menus.ask_radius_search()
 
-    # Search
     display.print_section("Searching for Concerts")
     concerts = find_concerts(artists, country_codes, city, radius_km)
 
-    # Build title
     country_names = [menus.COUNTRIES.get(c, c) for c in country_codes]
     title_parts = [", ".join(country_names)]
     if city and radius_km:
@@ -123,57 +176,26 @@ def main() -> None:
         display_name=user.get("display_name", ""),
     )
 
-    # 4. Choose artist source
-    source = menus.ask_artist_source()
-    if source is None:
-        sys.exit(0)
+    # 4. Artist management (initial)
+    combined = manage_artists(sp)
 
-    # 5. Time range (only needed for top artists)
-    time_range = "medium_term"
-    if source in ("top", "both"):
-        time_range = menus.ask_time_range()
-        if time_range is None:
-            sys.exit(0)
-
-    # 6. Fetch artists
-    top_artists, followed_artists = fetch_artists(sp, source, time_range)
-
-    # 7. Display artists
-    if top_artists:
-        display.print_section("Your Top Artists")
-        display.print_artists_table(
-            top_artists,
-            title=f"Top Artists — {TIME_RANGE_LABELS[time_range]}",
-        )
-
-    if followed_artists:
-        display.print_section("Artists You Follow")
-        display.print_artists_table(followed_artists, title="Followed Artists")
-
-    # 8. Combine unique artists for concert search
-    all_artist_ids = set()
-    combined = []
-    for artist in top_artists + followed_artists:
-        if artist.id not in all_artist_ids:
-            all_artist_ids.add(artist.id)
-            combined.append(artist)
-
-    # 9. Main loop
+    # 5. Main loop
     while True:
         action = menus.ask_main_menu()
+
         if action is None or action == "exit":
             console.print("\n[bold green]Goodbye![/bold green]")
             break
+
         elif action == "search":
             run_concert_search(combined)
+
+        elif action == "change_artists":
+            combined = manage_artists(sp)
+
         elif action == "artists":
-            if top_artists:
-                display.print_artists_table(
-                    top_artists,
-                    title=f"Top Artists — {TIME_RANGE_LABELS[time_range]}",
-                )
-            if followed_artists:
-                display.print_artists_table(followed_artists, title="Followed Artists")
+            display.print_section("Your Artist List")
+            display.print_artists_table(combined, title=f"Artists ({len(combined)})")
 
 
 if __name__ == "__main__":

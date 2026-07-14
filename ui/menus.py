@@ -1,7 +1,11 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 import questionary
 from questionary import Style
 from spotify.client import TIME_RANGE_LABELS
+
+if TYPE_CHECKING:
+    import spotipy
+    from spotify.models import Artist
 
 # Custom questionary style to match Rich's color scheme
 STYLE = Style([
@@ -149,17 +153,26 @@ COUNTRIES = {
 _NAME_TO_CODE = {name.lower(): code for code, name in COUNTRIES.items()}
 
 
-def ask_artist_source() -> str:
-    """Ask whether to use top artists, followed artists, or both."""
-    return questionary.select(
-        "Which artists should we search concerts for?",
-        choices=[
-            questionary.Choice("Both top played & followed artists", value="both"),
-            questionary.Choice("Top played artists only", value="top"),
-            questionary.Choice("Followed artists only", value="followed"),
-        ],
+# ---------------------------------------------------------------------------
+# Artist source selection
+# ---------------------------------------------------------------------------
+
+def ask_artist_sources() -> List[str]:
+    """
+    Multi-select: which sources should be included?
+    Returns a list of selected source keys: 'top', 'followed', 'searched'
+    """
+    choices = [
+        questionary.Choice("My top played artists", value="top"),
+        questionary.Choice("My followed artists", value="followed"),
+        questionary.Choice("Search for specific artists", value="searched"),
+    ]
+    selected = questionary.checkbox(
+        "Which artist sources do you want to include? (space to select, enter to confirm)",
+        choices=choices,
         style=STYLE,
     ).ask()
+    return selected or []
 
 
 def ask_time_range() -> str:
@@ -175,13 +188,182 @@ def ask_time_range() -> str:
     ).ask()
 
 
+def ask_specific_artists(sp: "spotipy.Spotify") -> List["Artist"]:
+    """
+    Autocomplete artist search loop using the Spotify search API.
+    User types a query, picks from results, optionally adds more.
+    Returns a list of Artist objects with source='searched'.
+    """
+    from spotify.client import search_artists
+
+    selected: List["Artist"] = []
+
+    while True:
+        selected_names = [a.name for a in selected]
+        if selected_names:
+            prompt = f"Search for another artist (selected: {', '.join(selected_names)}):"
+        else:
+            prompt = "Search for an artist:"
+
+        query = questionary.text(
+            prompt,
+            style=STYLE,
+        ).ask()
+
+        if not query or not query.strip():
+            break
+
+        results = search_artists(sp, query.strip())
+        if not results:
+            print("  No results found, try again.")
+            continue
+
+        # Let user pick from search results
+        already_ids = {a.id for a in selected}
+        choices = [
+            questionary.Choice(
+                f"{a.name}" + (f" — {', '.join(a.genres[:2])}" if a.genres else ""),
+                value=a,
+            )
+            for a in results
+            if a.id not in already_ids
+        ]
+        choices.append(questionary.Choice("[ Cancel / skip this search ]", value=None))
+
+        pick = questionary.select(
+            "Select an artist:",
+            choices=choices,
+            style=STYLE,
+        ).ask()
+
+        if pick is not None:
+            selected.append(pick)
+
+        add_more = questionary.confirm(
+            "Search for another artist?",
+            default=True,
+            style=STYLE,
+        ).ask()
+
+        if not add_more:
+            break
+
+    return selected
+
+
+# ---------------------------------------------------------------------------
+# Artist review / editing
+# ---------------------------------------------------------------------------
+
+def ask_review_artists(artists: List["Artist"]) -> str:
+    """
+    Show a summary of the current artist list and ask what to do next.
+    Returns: 'continue', 'remove', 'add', 'restart'
+    """
+    count = len(artists)
+    return questionary.select(
+        f"Your artist list has {count} artist(s). What would you like to do?",
+        choices=[
+            questionary.Choice("Continue with these artists", value="continue"),
+            questionary.Choice("Remove specific artists", value="remove"),
+            questionary.Choice("Add more artists (search)", value="add"),
+            questionary.Choice("Start over", value="restart"),
+        ],
+        style=STYLE,
+    ).ask()
+
+
+def ask_remove_artists(artists: List["Artist"]) -> List["Artist"]:
+    """
+    Let the user remove artists from the current list.
+    - If <=20 artists: straight to checkbox.
+    - If >20: offer checkbox or search-to-remove.
+    Returns the updated list of artists to KEEP.
+    """
+    if len(artists) > 20:
+        method = questionary.select(
+            "How would you like to remove artists?",
+            choices=[
+                questionary.Choice("Uncheck from full list", value="checkbox"),
+                questionary.Choice("Search by name", value="search"),
+            ],
+            style=STYLE,
+        ).ask()
+    else:
+        method = "checkbox"
+
+    if method == "checkbox":
+        choices = [
+            questionary.Choice(
+                f"{a.name}  [{a.source}]",
+                value=a,
+                checked=True,  # all checked (kept) by default
+            )
+            for a in artists
+        ]
+        keep = questionary.checkbox(
+            "Uncheck artists to remove them (enter to confirm):",
+            choices=choices,
+            style=STYLE,
+        ).ask()
+        return keep if keep is not None else artists
+
+    else:
+        # Search-to-remove loop
+        remaining = list(artists)
+        while True:
+            query = questionary.text(
+                "Type artist name to remove (leave blank to finish):",
+                style=STYLE,
+            ).ask()
+
+            if not query or not query.strip():
+                break
+
+            query_lower = query.strip().lower()
+            matches = [a for a in remaining if query_lower in a.name.lower()]
+
+            if not matches:
+                print("  No matching artists found.")
+                continue
+
+            choices = [
+                questionary.Choice(f"{a.name}  [{a.source}]", value=a)
+                for a in matches
+            ]
+            choices.append(questionary.Choice("[ Cancel ]", value=None))
+
+            to_remove = questionary.select(
+                "Select artist to remove:",
+                choices=choices,
+                style=STYLE,
+            ).ask()
+
+            if to_remove is not None:
+                remaining = [a for a in remaining if a.id != to_remove.id]
+                print(f"  Removed: {to_remove.name}")
+
+            cont = questionary.confirm(
+                "Remove another artist?",
+                default=True,
+                style=STYLE,
+            ).ask()
+            if not cont:
+                break
+
+        return remaining
+
+
+# ---------------------------------------------------------------------------
+# Country selection
+# ---------------------------------------------------------------------------
+
 def ask_countries() -> List[str]:
     """
     2-step country selection:
     Step 1 — choose a continent, all countries, or pick specific ones.
     Step 2 — if picking specific: autocomplete search loop.
     """
-    # Build step 1 choices
     continent_choices = [
         questionary.Choice(f"All of {continent}", value=f"continent:{continent}")
         for continent in CONTINENTS.keys()
@@ -205,7 +387,6 @@ def ask_countries() -> List[str]:
         continent_name = scope.split(":", 1)[1]
         return list(CONTINENTS[continent_name].keys())
 
-    # "specific" — autocomplete loop
     return _ask_specific_countries()
 
 
@@ -214,7 +395,6 @@ def _ask_specific_countries() -> List[str]:
     Autocomplete loop — user types to search for a country,
     selects it, then optionally adds more.
     """
-    # Build autocomplete list: "Germany (DE)", sorted by name
     all_options = sorted(
         [f"{name} ({code})" for code, name in COUNTRIES.items()],
         key=lambda x: x.lower(),
@@ -224,7 +404,6 @@ def _ask_specific_countries() -> List[str]:
     selected_labels = []
 
     while True:
-        # Show already selected countries
         if selected_labels:
             prompt = f"Add another country? (selected: {', '.join(selected_labels)})"
         else:
@@ -238,11 +417,9 @@ def _ask_specific_countries() -> List[str]:
             ignore_case=True,
         ).ask()
 
-        # Empty input or cancelled — done
         if not answer:
             break
 
-        # Parse "Germany (DE)" -> code "DE"
         if "(" in answer and answer.endswith(")"):
             code = answer.split("(")[-1].rstrip(")")
             name = answer.split(" (")[0]
@@ -250,7 +427,6 @@ def _ask_specific_countries() -> List[str]:
                 selected_codes.append(code)
                 selected_labels.append(name)
 
-        # Ask if they want to add more
         add_more = questionary.confirm(
             "Add another country?",
             default=True,
@@ -262,6 +438,10 @@ def _ask_specific_countries() -> List[str]:
 
     return selected_codes
 
+
+# ---------------------------------------------------------------------------
+# Radius / city search
+# ---------------------------------------------------------------------------
 
 def ask_radius_search() -> Tuple[Optional[str], Optional[int]]:
     """
@@ -297,13 +477,18 @@ def ask_radius_search() -> Tuple[Optional[str], Optional[int]]:
     return city, radius_str
 
 
+# ---------------------------------------------------------------------------
+# Main menu
+# ---------------------------------------------------------------------------
+
 def ask_main_menu() -> str:
     """Main menu after viewing results."""
     return questionary.select(
         "What would you like to do?",
         choices=[
-            questionary.Choice("Search concerts again with different settings", value="search"),
-            questionary.Choice("View my artists again", value="artists"),
+            questionary.Choice("Search concerts for current artists", value="search"),
+            questionary.Choice("Change artist selection", value="change_artists"),
+            questionary.Choice("View my artists", value="artists"),
             questionary.Choice("Exit", value="exit"),
         ],
         style=STYLE,

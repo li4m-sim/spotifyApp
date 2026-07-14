@@ -37,11 +37,13 @@ def print_artists_table(artists: List[Artist], title: str) -> None:
     table.add_column("Artist", style="bold white", min_width=20)
     table.add_column("Genres", style="cyan", min_width=25)
     table.add_column("Popularity", justify="center", width=12)
+    table.add_column("Source", justify="center", width=10)
 
     for i, artist in enumerate(artists, 1):
         genres = ", ".join(artist.genres[:3]) if artist.genres else "—"
         popularity_bar = _popularity_bar(artist.popularity)
-        table.add_row(str(i), artist.name, genres, popularity_bar)
+        source_cell = _source_tag(artist.source)
+        table.add_row(str(i), artist.name, genres, popularity_bar, source_cell)
 
     console.print(table)
 
@@ -130,3 +132,13 @@ def _popularity_bar(score: int) -> str:
     filled = round(score / 10)
     bar = "█" * filled + "░" * (10 - filled)
     return f"{bar} {score}"
+
+
+def _source_tag(source: str) -> str:
+    """Return a coloured source tag for the artists table."""
+    tags = {
+        "top": "[bold cyan]top[/bold cyan]",
+        "followed": "[bold green]followed[/bold green]",
+        "searched": "[bold yellow]searched[/bold yellow]",
+    }
+    return tags.get(source, source)

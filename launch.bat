@@ -141,11 +141,15 @@ if %errorlevel% neq 0 (
 :: ---------------------------------------------------------------------------
 
 echo Checking dependencies...
-pip install -r requirements.txt --quiet
+
+:: Bootstrap pip in case it's missing from the venv
+"%PYTHON_EXE%" -m ensurepip --upgrade >nul 2>&1
+
+"%PYTHON_EXE%" -m pip install -r requirements.txt --quiet
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Failed to install dependencies.
-    echo Try running: pip install -r requirements.txt
+    echo Try running: python -m pip install -r requirements.txt
     echo.
     pause
     exit /b 1
@@ -159,6 +163,6 @@ echo.
 
 echo Starting Spotify Concert Finder...
 echo.
-python main.py
+"%PYTHON_EXE%" main.py
 
 pause
